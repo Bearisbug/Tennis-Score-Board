@@ -40,12 +40,12 @@ create table if not exists matches (
   player1 text not null,
   player2 text not null,
   match_date date not null,
-  status text not null default 'upcoming',   -- "upcoming" | "completed"
-  use_ad boolean not null default true,      -- 是否使用占先
-  format text not null default 'best-of-3',  -- 赛制
+  status text not null default 'upcoming',   -- "upcoming" | "ongoing" | "completed"
+  use_ad boolean not null default true,      -- 是否使用占先规则
+  format text not null default 'best-of-3',   -- 支持 "best-of-3", "best-of-5", "one-set-4", "one-set-6"
   created_at timestamp with time zone default now(),
 
-  -- 用于存储比分的字段，这里用 JSON（PostgreSQL 的 jsonb）
+  -- 存储记分状态（JSON 格式）
   score_state jsonb
 );
 

@@ -13,7 +13,7 @@ type Match = {
   id: string
   player1: string
   player2: string
-  format: "best-of-3" | "best-of-5"
+  format: "best-of-3" | "best-of-5" | "one-set-4" | "one-set-6"
   useAD: boolean
   status: "upcoming" | "ongoing" | "completed"
 }
@@ -72,114 +72,121 @@ export default function MatchPage({ params }: { params: { id: string } }) {
     fetchMatch()
   }, [params.id])
 
-  // 3. 更新记分函数：每次点击加分或减分按钮时调用
+  // 设定不同赛制的相关参数
+  const getMatchParams = (format: string) => {
+    let maxSetCount = 3
+    let winningGameCount = 6  // 胜盘局数（赢盘时必须达到的局数，不包含 deuce 等特殊处理）
+    switch (format) {
+      case "best-of-3":
+        maxSetCount = 3
+        winningGameCount = 6
+        break
+      case "best-of-5":
+        maxSetCount = 5
+        winningGameCount = 6
+        break
+      case "one-set-4":
+        maxSetCount = 1
+        winningGameCount = 4
+        break
+      case "one-set-6":
+        maxSetCount = 1
+        winningGameCount = 6
+        break
+      default:
+        break
+    }
+    return { maxSetCount, winningGameCount }
+  }
+
   const updateScore = async (player: "player1" | "player2", increment: boolean) => {
     if (!match || !score) return
 
-    // 通过 player 参数确定当前操作选手的索引（0 表示左侧，1 表示右侧）
+    // 如果比赛已经结束且是加分操作，则不允许再增加大比分
+    if (match.status === "completed") return
+
     const playerIndex = player === "player1" ? 0 : 1
     const otherPlayerIndex = playerIndex === 0 ? 1 : 0
 
-    // 根据赛制确定最大盘数（例如 best-of-3 共有 3 盘，best-of-5 共有 5 盘）
-    const maxSetCount = match.format === "best-of-3" ? 3 : 5
+    const { maxSetCount, winningGameCount } = getMatchParams(match.format)
 
-    // 深拷贝一份当前记分状态，避免直接修改 state
+    // 深拷贝当前记分状态
     const newScore: Score = JSON.parse(JSON.stringify(score))
-    // 复制比赛信息，便于后续修改比赛状态
     let updatedMatch: Match = { ...match }
 
-    // 保证 currentSet 的索引不超过已有盘数（防止读取 undefined）
     if (newScore.currentSet >= newScore.sets.length) {
       newScore.currentSet = newScore.sets.length - 1
     }
 
-    // 4. 加分逻辑
+    // 加分逻辑
     if (increment) {
-      // 如果当前局得分小于 40（对应数字小于 3），直接加分
+      // 当前局得分：0-1-2-3 分别对应 "0"、"15"、"30"、"40"
       if (newScore.currentGame[playerIndex] < 3) {
         newScore.currentGame[playerIndex]++
       } else {
-        // 已达到 40 分，进入决胜局逻辑
+        // 已达到40分，进入决胜局逻辑
         if (match.useAD) {
-          // 若采用占先规则
           if (newScore.currentGame[otherPlayerIndex] === 3) {
-            // 双方均为 40 分（deuce）
+            // 双方均为40分（deuce状态）
             if (newScore.advantage === player) {
-              // 如果当前选手已占先，再得一分则赢下该局：加一局分，并重置当前局得分和占先状态
-              if (newScore.sets[newScore.currentSet][playerIndex] < 5) {
-                newScore.sets[newScore.currentSet][playerIndex]++
-              }
+              // 已占先，再得一分，赢下当前局
+              newScore.sets[newScore.currentSet][playerIndex]++
               newScore.currentGame = [0, 0]
               newScore.advantage = null
             } else if (newScore.advantage === null) {
-              // 若无人占先，则当前选手获得占先
               newScore.advantage = player
             } else {
-              // 对方占先时，本次得分取消对方占先，回到 deuce 状态
               newScore.advantage = null
             }
           } else {
-            // 如果对手未满 40，直接赢下该局
-            if (newScore.sets[newScore.currentSet][playerIndex] < 5) {
-              newScore.sets[newScore.currentSet][playerIndex]++
-            }
+            // 对手未到40，直接赢下当前局
+            newScore.sets[newScore.currentSet][playerIndex]++
             newScore.currentGame = [0, 0]
             newScore.advantage = null
           }
         } else {
-          // 不使用占先规则，直接赢下该局
-          if (newScore.sets[newScore.currentSet][playerIndex] < 5) {
-            newScore.sets[newScore.currentSet][playerIndex]++
-          }
+          // 不使用占先规则
+          newScore.sets[newScore.currentSet][playerIndex]++
           newScore.currentGame = [0, 0]
         }
       }
     } else {
-      // 5. 减分逻辑（退分操作）
+      // 减分逻辑
       if (newScore.currentGame[playerIndex] > 0) {
-        // 当前局分大于 0 时，直接减去一分
         newScore.currentGame[playerIndex]--
-      } else {
-        // 若当前局分已为 0，则尝试退局：若该盘已有局分，则退掉一局，并将当前局分设为 40，同时设置占先（仅作为简单示例）
-        if (newScore.sets[newScore.currentSet][playerIndex] > 0) {
-          newScore.sets[newScore.currentSet][playerIndex]--
-          newScore.currentGame[playerIndex] = 3 // 40 分
-          if (match.useAD) {
-            newScore.advantage = player
-          }
+      } else if (newScore.sets[newScore.currentSet][playerIndex] > 0) {
+        newScore.sets[newScore.currentSet][playerIndex]--
+        newScore.currentGame[playerIndex] = 3 // 回到40
+        if (match.useAD) {
+          newScore.advantage = player
         }
       }
     }
 
-    // 6. 检查当前盘是否满足结束条件：
-    //    当某选手局分达到 5 且领先对手至少 2 局时，认为该盘结束
+    // 检查是否赢下当前盘：若该盘局数达到 winningGameCount 且领先至少2局，则认为该盘结束
     const currentSetScore = newScore.sets[newScore.currentSet]
     if (
-      currentSetScore[playerIndex] >= 5 &&
+      currentSetScore[playerIndex] >= winningGameCount &&
       currentSetScore[playerIndex] - currentSetScore[otherPlayerIndex] >= 2
     ) {
-      // 当前盘结束
+      // 结束当前盘
       if (newScore.currentSet < maxSetCount - 1) {
-        // 若当前盘不是最后一盘，则自动切换到下一盘并新增一盘的局分记录
         newScore.currentSet++
         newScore.sets.push([0, 0])
       } else {
-        // 已经是最后一盘：标记最后一盘完成，并更新比赛状态为 "completed"
+        // 已经是最后一盘，标记比赛结束
         newScore.finalSetCompleted = true
         updatedMatch.status = "completed"
       }
     } else {
-      // 若当前盘为最后一盘但未满足结束条件，清除完成标记
       if (newScore.currentSet === maxSetCount - 1) {
         newScore.finalSetCompleted = false
       }
     }
 
-    // 7. 更新本地记分状态和比赛状态
+    // 更新本地状态和数据库记录
     setScore(newScore)
     setMatch(updatedMatch)
-
-    // 8. 同步更新到数据库：同时更新记分状态和比赛状态（match.status）
     const { error } = await supabase
       .from("matches")
       .update({
@@ -209,7 +216,12 @@ export default function MatchPage({ params }: { params: { id: string } }) {
   //    - 对于已完成的盘（非当前进行盘或最后一盘且已完成），根据局分判断胜者：
   //        左侧胜的圆点显示为绿色，右侧胜的显示为红色；
   //    - 未完成的盘显示为灰色
-  const totalSets = match.format === "best-of-3" ? 3 : 5
+  const totalSets =
+    match.format === "best-of-3"
+      ? 3
+      : match.format === "best-of-5"
+      ? 5
+      : 1
   const renderDots = Array.from({ length: totalSets }, (_, i) => {
     let dotColor = "bg-gray-300"
     if (i < score.sets.length) {
@@ -280,13 +292,13 @@ export default function MatchPage({ params }: { params: { id: string } }) {
               transition={{ duration: 0.3 }}
               className="flex justify-between items-center w-full"
             >
-              {/* 显示局分时限制最大显示为 5 */}
+              {/* 显示局分时限制最大显示为 6 */}
               <div className="text-6xl font-bold">
-                {Math.min(score.sets[displaySetIndex][0], 5)}
+                {Math.min(score.sets[displaySetIndex][0], 6)}
               </div>
               <div className="text-4xl font-semibold">-</div>
               <div className="text-6xl font-bold">
-                {Math.min(score.sets[displaySetIndex][1], 5)}
+                {Math.min(score.sets[displaySetIndex][1], 6)}
               </div>
             </motion.div>
           </AnimatePresence>
