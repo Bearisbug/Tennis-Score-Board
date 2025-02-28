@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { motion, AnimatePresence } from "framer-motion"
 
 import { supabase } from "@/lib/supabaseClient"
+import { Loader2 } from "lucide-react"
 
 // 定义比赛类型，包含参赛选手、赛制、是否使用占先以及比赛状态
 type Match = {
@@ -194,7 +195,14 @@ export default function MatchPage({ params }: { params: { id: string } }) {
   }
 
   // 若比赛信息或记分状态还未加载，则显示加载提示
-  if (!match || !score) return <div>Loading...</div>
+  if (!match || !score) {
+    return (
+      <div className="flex items-center justify-center p-4 min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <span className="ml-2 text-sm text-muted-foreground">加载中...</span>
+      </div>
+    )
+  }
 
   // 9. 根据赛制生成总盘数，并为每盘生成圆点
   //    圆点颜色逻辑：
