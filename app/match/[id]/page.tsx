@@ -25,6 +25,11 @@ type Score = {
   currentSet: number       // 当前进行的盘索引
   advantage: null | "player1" | "player2"  // 当前是否有占先
   finalSetCompleted: boolean  // 标记最后一盘是否完成
+  /**
+   * 新增字段：用于记录每一盘的抢七分数（如果没有触发抢七则为 null）。
+   * 例如：tieBreakScores[i] = [p1TieBreakPoints, p2TieBreakPoints]。
+   */
+  tieBreakScores: (number[] | null)[]
 }
 
 const scoreMap = ["0", "15", "30", "40", "A"]
@@ -38,6 +43,7 @@ export default function MatchPage({ params }: { params: { id: string } }) {
     currentSet: 0,
     advantage: null,
     finalSetCompleted: false,
+    tieBreakScores: [], // 初始化时为空数组
   })
 
   // 2. 拉取比赛信息及记分状态
@@ -57,16 +63,25 @@ export default function MatchPage({ params }: { params: { id: string } }) {
       if (!data) return
 
       // 若数据库中存在记分状态则直接使用，否则初始化默认记分状态
+      // 同时，确保 tieBreakScores 与 sets 同步
+      const newScore: Score = data.score_state || {
+        sets: [[0, 0]],
+        currentGame: [0, 0],
+        currentSet: 0,
+        advantage: null,
+        finalSetCompleted: false,
+        tieBreakScores: [null],
+      }
+
+      if (!Array.isArray(newScore.tieBreakScores)) {
+        newScore.tieBreakScores = []
+      }
+      while (newScore.tieBreakScores.length < newScore.sets.length) {
+        newScore.tieBreakScores.push(null)
+      }
+
       setMatch(data)
-      setScore(
-        data.score_state || {
-          sets: [[0, 0]],
-          currentGame: [0, 0],
-          currentSet: 0,
-          advantage: null,
-          finalSetCompleted: false,
-        },
-      )
+      setScore(newScore)
     }
 
     fetchMatch()
@@ -99,11 +114,22 @@ export default function MatchPage({ params }: { params: { id: string } }) {
     return { maxSetCount, winningGameCount }
   }
 
+  /**
+   * 判断是否需要进入抢七：
+   * 当盘分 [p1, p2] 达到 6:6 (或 4:4) 时，就应进入抢七。
+   */
+  const shouldPlayTieBreak = (setScore: number[], winningGameCount: number) => {
+    return (
+      setScore[0] === winningGameCount &&
+      setScore[1] === winningGameCount
+    )
+  }
+
   const updateScore = async (player: "player1" | "player2", increment: boolean) => {
     if (!match || !score) return
 
     // 如果比赛已经结束且是加分操作，则不允许再增加大比分
-    if (match.status === "completed") return
+    if (match.status === "completed" && increment) return
 
     const playerIndex = player === "player1" ? 0 : 1
     const otherPlayerIndex = playerIndex === 0 ? 1 : 0
@@ -118,69 +144,126 @@ export default function MatchPage({ params }: { params: { id: string } }) {
       newScore.currentSet = newScore.sets.length - 1
     }
 
-    // 加分逻辑
-    if (increment) {
-      // 当前局得分：0-1-2-3 分别对应 "0"、"15"、"30"、"40"
-      if (newScore.currentGame[playerIndex] < 3) {
-        newScore.currentGame[playerIndex]++
+    // 确保 tieBreakScores[newScore.currentSet] 存在
+    if (newScore.tieBreakScores[newScore.currentSet] === undefined) {
+      newScore.tieBreakScores[newScore.currentSet] = null
+    }
+
+    const currentSetScore = newScore.sets[newScore.currentSet]
+    const isTieBreak = newScore.tieBreakScores[newScore.currentSet] !== null
+
+    // ---------------- 抢七模式下的加/减分 ----------------
+    if (isTieBreak) {
+      const tieScore = newScore.tieBreakScores[newScore.currentSet]!
+      // 加分
+      if (increment) {
+        tieScore[playerIndex]++
       } else {
-        // 已达到40分，进入决胜局逻辑
-        if (match.useAD) {
-          if (newScore.currentGame[otherPlayerIndex] === 3) {
-            // 双方均为40分（deuce状态）
-            if (newScore.advantage === player) {
-              // 已占先，再得一分，赢下当前局
+        // 减分
+        if (tieScore[playerIndex] > 0) {
+          tieScore[playerIndex]--
+        }
+      }
+
+      // 判断抢七是否结束：一方 >= 7 且比对手多 2 分
+      if (
+        tieScore[playerIndex] >= 7 &&
+        tieScore[playerIndex] - tieScore[otherPlayerIndex] >= 2
+      ) {
+        // 抢七结束，该盘比分定格为 7:6 或 6:7
+        if (playerIndex === 0) {
+          currentSetScore[0] = winningGameCount + 1 // 7
+          currentSetScore[1] = winningGameCount     // 6
+        } else {
+          currentSetScore[1] = winningGameCount + 1
+          currentSetScore[0] = winningGameCount
+        }
+
+        // 结束当前盘
+        if (newScore.currentSet < maxSetCount - 1) {
+          newScore.currentSet++
+          newScore.sets.push([0, 0])
+          newScore.tieBreakScores.push(null)
+        } else {
+          // 已经是最后一盘，标记比赛结束
+          newScore.finalSetCompleted = true
+          updatedMatch.status = "completed"
+        }
+      }
+
+      // ---------------- 常规模式下的加/减分 ----------------
+    } else {
+      // 加分逻辑
+      if (increment) {
+        // 当前局得分：0-1-2-3 分别对应 "0"、"15"、"30"、"40"
+        if (newScore.currentGame[playerIndex] < 3) {
+          newScore.currentGame[playerIndex]++
+        } else {
+          // 已达到40分，进入决胜局逻辑
+          if (match.useAD) {
+            if (newScore.currentGame[otherPlayerIndex] === 3) {
+              // 双方均为40分（deuce状态）
+              if (newScore.advantage === player) {
+                // 已占先，再得一分，赢下当前局
+                newScore.sets[newScore.currentSet][playerIndex]++
+                newScore.currentGame = [0, 0]
+                newScore.advantage = null
+              } else if (newScore.advantage === null) {
+                newScore.advantage = player
+              } else {
+                newScore.advantage = null
+              }
+            } else {
+              // 对手未到40，直接赢下当前局
               newScore.sets[newScore.currentSet][playerIndex]++
               newScore.currentGame = [0, 0]
               newScore.advantage = null
-            } else if (newScore.advantage === null) {
-              newScore.advantage = player
-            } else {
-              newScore.advantage = null
             }
           } else {
-            // 对手未到40，直接赢下当前局
+            // 不使用占先规则
             newScore.sets[newScore.currentSet][playerIndex]++
             newScore.currentGame = [0, 0]
-            newScore.advantage = null
           }
-        } else {
-          // 不使用占先规则
-          newScore.sets[newScore.currentSet][playerIndex]++
-          newScore.currentGame = [0, 0]
         }
-      }
-    } else {
-      // 减分逻辑
-      if (newScore.currentGame[playerIndex] > 0) {
-        newScore.currentGame[playerIndex]--
-      } else if (newScore.sets[newScore.currentSet][playerIndex] > 0) {
-        newScore.sets[newScore.currentSet][playerIndex]--
-        newScore.currentGame[playerIndex] = 3 // 回到40
-        if (match.useAD) {
-          newScore.advantage = player
-        }
-      }
-    }
-
-    // 检查是否赢下当前盘：若该盘局数达到 winningGameCount 且领先至少2局，则认为该盘结束
-    const currentSetScore = newScore.sets[newScore.currentSet]
-    if (
-      currentSetScore[playerIndex] >= winningGameCount &&
-      currentSetScore[playerIndex] - currentSetScore[otherPlayerIndex] >= 2
-    ) {
-      // 结束当前盘
-      if (newScore.currentSet < maxSetCount - 1) {
-        newScore.currentSet++
-        newScore.sets.push([0, 0])
       } else {
-        // 已经是最后一盘，标记比赛结束
-        newScore.finalSetCompleted = true
-        updatedMatch.status = "completed"
+        // 减分逻辑
+        if (newScore.currentGame[playerIndex] > 0) {
+          newScore.currentGame[playerIndex]--
+        } else if (newScore.sets[newScore.currentSet][playerIndex] > 0) {
+          newScore.sets[newScore.currentSet][playerIndex]--
+          newScore.currentGame[playerIndex] = 3 // 回到40
+          if (match.useAD) {
+            newScore.advantage = player
+          }
+        }
       }
-    } else {
-      if (newScore.currentSet === maxSetCount - 1) {
-        newScore.finalSetCompleted = false
+
+      // 检查是否赢下当前局后有无达到“赢盘条件”
+      if (
+        currentSetScore[playerIndex] >= winningGameCount &&
+        currentSetScore[playerIndex] - currentSetScore[otherPlayerIndex] >= 2
+      ) {
+        // 结束当前盘
+        if (newScore.currentSet < maxSetCount - 1) {
+          newScore.currentSet++
+          newScore.sets.push([0, 0])
+          newScore.tieBreakScores.push(null)
+        } else {
+          // 已经是最后一盘，标记比赛结束
+          newScore.finalSetCompleted = true
+          updatedMatch.status = "completed"
+        }
+      } else {
+        // 如果没直接赢盘，则判断是否进入抢七
+        if (shouldPlayTieBreak(currentSetScore, winningGameCount)) {
+          newScore.tieBreakScores[newScore.currentSet] = [0, 0]
+          newScore.currentGame = [0, 0]
+          newScore.advantage = null
+        } else {
+          if (newScore.currentSet === maxSetCount - 1) {
+            newScore.finalSetCompleted = false
+          }
+        }
       }
     }
 
@@ -292,13 +375,13 @@ export default function MatchPage({ params }: { params: { id: string } }) {
               transition={{ duration: 0.3 }}
               className="flex justify-between items-center w-full"
             >
-              {/* 显示局分时限制最大显示为 6 */}
+              {/* 显示局分时限制最大显示为 7（因有抢七可能） */}
               <div className="text-6xl font-bold">
-                {Math.min(score.sets[displaySetIndex][0], 6)}
+                {Math.min(score.sets[displaySetIndex][0], 7)}
               </div>
               <div className="text-4xl font-semibold">-</div>
               <div className="text-6xl font-bold">
-                {Math.min(score.sets[displaySetIndex][1], 6)}
+                {Math.min(score.sets[displaySetIndex][1], 7)}
               </div>
             </motion.div>
           </AnimatePresence>
