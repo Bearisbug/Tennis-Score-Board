@@ -32,6 +32,7 @@ type Score = {
   tieBreakScores: (number[] | null)[]
 }
 
+// 分数映射：0,15,30,40,A
 const scoreMap = ["0", "15", "30", "40", "A"]
 
 export default function MatchPage({ params }: { params: { id: string } }) {
@@ -43,7 +44,7 @@ export default function MatchPage({ params }: { params: { id: string } }) {
     currentSet: 0,
     advantage: null,
     finalSetCompleted: false,
-    tieBreakScores: [], // 初始化时为空数组
+    tieBreakScores: [],
   })
 
   // 2. 拉取比赛信息及记分状态
@@ -116,16 +117,26 @@ export default function MatchPage({ params }: { params: { id: string } }) {
 
   /**
    * 判断是否需要进入抢七：
-   * 当盘分 [p1, p2] 达到 6:6 (或 4:4) 时，就应进入抢七。
+   * - 若 winningGameCount = 4，则当盘分来到 3:3 时进入抢七。
+   * - 若 winningGameCount = 6，则当盘分来到 6:6 时进入抢七。
    */
-  const shouldPlayTieBreak = (setScore: number[], winningGameCount: number) => {
+  const shouldPlayTieBreak = (
+    setScore: number[],
+    winningGameCount: number
+  ) => {
+    // 对于 one-set-4 ，3:3 触发抢七
+    // 对于普通网球 (best-of-3, best-of-5, one-set-6)，6:6 触发抢七
+    const tieBreakTrigger = (winningGameCount === 4) ? 3 : 6
     return (
-      setScore[0] === winningGameCount &&
-      setScore[1] === winningGameCount
+      setScore[0] === tieBreakTrigger &&
+      setScore[1] === tieBreakTrigger
     )
   }
 
-  const updateScore = async (player: "player1" | "player2", increment: boolean) => {
+  const updateScore = async (
+    player: "player1" | "player2",
+    increment: boolean
+  ) => {
     if (!match || !score) return
 
     // 如果比赛已经结束且是加分操作，则不允许再增加大比分
@@ -170,10 +181,10 @@ export default function MatchPage({ params }: { params: { id: string } }) {
         tieScore[playerIndex] >= 7 &&
         tieScore[playerIndex] - tieScore[otherPlayerIndex] >= 2
       ) {
-        // 抢七结束，该盘比分定格为 7:6 或 6:7
+        // 抢七结束，该盘比分定格为 7:6 或 6:7（或 4:3 -> 5:3 这类短盘需自行调整）
         if (playerIndex === 0) {
-          currentSetScore[0] = winningGameCount + 1 // 7
-          currentSetScore[1] = winningGameCount     // 6
+          currentSetScore[0] = winningGameCount + 1 // 7 (或 5)
+          currentSetScore[1] = winningGameCount     // 6 (或 4)
         } else {
           currentSetScore[1] = winningGameCount + 1
           currentSetScore[0] = winningGameCount
@@ -260,6 +271,7 @@ export default function MatchPage({ params }: { params: { id: string } }) {
           newScore.currentGame = [0, 0]
           newScore.advantage = null
         } else {
+          // 若是最后一盘且尚未决出胜负，则 finalSetCompleted = false
           if (newScore.currentSet === maxSetCount - 1) {
             newScore.finalSetCompleted = false
           }
@@ -270,6 +282,7 @@ export default function MatchPage({ params }: { params: { id: string } }) {
     // 更新本地状态和数据库记录
     setScore(newScore)
     setMatch(updatedMatch)
+
     const { error } = await supabase
       .from("matches")
       .update({
@@ -293,7 +306,7 @@ export default function MatchPage({ params }: { params: { id: string } }) {
       </div>
     )
   }
-
+  const { maxSetCount, winningGameCount } = getMatchParams(match.format)
   // 9. 根据赛制生成总盘数，并为每盘生成圆点
   //    圆点颜色逻辑：
   //    - 对于已完成的盘（非当前进行盘或最后一盘且已完成），根据局分判断胜者：
@@ -305,6 +318,7 @@ export default function MatchPage({ params }: { params: { id: string } }) {
       : match.format === "best-of-5"
       ? 5
       : 1
+
   const renderDots = Array.from({ length: totalSets }, (_, i) => {
     let dotColor = "bg-gray-300"
     if (i < score.sets.length) {
@@ -339,26 +353,45 @@ export default function MatchPage({ params }: { params: { id: string } }) {
         {renderDots}
       </div>
 
-      {/* 11. 渲染当前局（game）得分 */}
+      {/* 11. 渲染当前局（game）得分或抢七分数 */}
       <Card className="mb-4 flex-grow flex items-center justify-center">
         <CardContent className="w-full h-full flex justify-center items-center">
           <AnimatePresence mode="wait">
-            <motion.div
-              key={`${score.currentGame[0]}-${score.currentGame[1]}-${score.advantage ?? "none"}`}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              transition={{ duration: 0.3 }}
-              className="flex justify-between items-center w-full"
-            >
-              <div className="text-9xl font-bold w-2/5 text-center">
-                {score.advantage === "player1" ? "A" : scoreMap[score.currentGame[0]]}
-              </div>
-              <div className="text-6xl font-semibold">-</div>
-              <div className="text-9xl font-bold w-2/5 text-center">
-                {score.advantage === "player2" ? "A" : scoreMap[score.currentGame[1]]}
-              </div>
-            </motion.div>
+            {/* 判断当前盘是否在抢七模式 */}
+            {score.tieBreakScores[displaySetIndex] !== null ? (
+              // 抢七模式：显示 tieBreak 分
+              <motion.div
+                key={`tiebreak-${score.tieBreakScores[displaySetIndex]?.join("-")}`}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.3 }}
+                className="flex flex-col items-center w-full"
+              >
+                <div className="text-4xl mb-4 font-bold">Tie-Break</div>
+                <div className="text-8xl font-bold">
+                  {score.tieBreakScores[displaySetIndex]?.[0]} - {score.tieBreakScores[displaySetIndex]?.[1]}
+                </div>
+              </motion.div>
+            ) : (
+              // 常规模式：显示 0,15,30,40,A
+              <motion.div
+                key={`${score.currentGame[0]}-${score.currentGame[1]}-${score.advantage ?? "none"}`}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.3 }}
+                className="flex justify-between items-center w-full"
+              >
+                <div className="text-9xl font-bold w-2/5 text-center">
+                  {score.advantage === "player1" ? "A" : scoreMap[score.currentGame[0]]}
+                </div>
+                <div className="text-6xl font-semibold">-</div>
+                <div className="text-9xl font-bold w-2/5 text-center">
+                  {score.advantage === "player2" ? "A" : scoreMap[score.currentGame[1]]}
+                </div>
+              </motion.div>
+            )}
           </AnimatePresence>
         </CardContent>
       </Card>
@@ -375,13 +408,13 @@ export default function MatchPage({ params }: { params: { id: string } }) {
               transition={{ duration: 0.3 }}
               className="flex justify-between items-center w-full"
             >
-              {/* 显示局分时限制最大显示为 7（因有抢七可能） */}
+              {/* 显示局分时最大可能会到 7，因有抢七；对于一盘到4的赛制也可能到5 */}
               <div className="text-6xl font-bold">
-                {Math.min(score.sets[displaySetIndex][0], 7)}
+                {Math.min(score.sets[displaySetIndex][0], winningGameCount + 1)}
               </div>
               <div className="text-4xl font-semibold">-</div>
               <div className="text-6xl font-bold">
-                {Math.min(score.sets[displaySetIndex][1], 7)}
+                {Math.min(score.sets[displaySetIndex][1], winningGameCount + 1)}
               </div>
             </motion.div>
           </AnimatePresence>
