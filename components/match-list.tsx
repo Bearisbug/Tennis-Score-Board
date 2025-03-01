@@ -110,14 +110,38 @@ export default function MatchList({
           className="flex items-center mb-4"
         >
           <Link href={`/match/${match.id}`} className="flex-grow">
-            <Card className="hover:shadow-lg transition-shadow duration-300 cursor-pointer">
-              <CardContent className="p-6 flex items-center justify-between relative">
-                <div className="text-lg font-semibold w-1/3 text-left">{match.player1}</div>
-                <div className="text-xl font-bold w-1/3 text-center">VS</div>
-                <div className="text-lg font-semibold w-1/3 text-right">{match.player2}</div>
-                <div className="absolute bottom-2 right-4 text-gray-500 text-xs">{match.match_date}</div>
-              </CardContent>
-            </Card>
+          <Card key={match.id} className="mb-4">
+          <CardContent className="p-6 flex items-center justify-between relative">
+            <div className="text-lg font-semibold w-1/3 text-left">{match.player1}</div>
+            <div className="flex items-center justify-center w-1/3">
+              {match.score_state && match.score_state.sets.length > 0 && (
+                <div className="flex flex-col items-center mr-2">
+                  <span className="text-xl font-bold">{match.score_state.sets.map((set: any[]) => set[0]).join("-")}</span>
+                  {match.status === "completed" && match.score_state.currentGame[0] > 0 && (
+                    <span className="text-xs text-gray-500">
+                      {["0", "15", "30", "40"][match.score_state.currentGame[0]]}
+                      {match.score_state.advantage === "player1" ? "A" : ""}
+                    </span>
+                  )}
+                </div>
+              )}
+              <div className="text-xl font-bold mx-2">VS</div>
+              {match.score_state && match.score_state.sets.length > 0 && (
+                <div className="flex flex-col items-center ml-2">
+                  <span className="text-xl font-bold">{match.score_state.sets.map((set: any[]) => set[1]).join("-")}</span>
+                  {match.status === "completed" && match.score_state.currentGame[1] > 0 && (
+                    <span className="text-xs text-gray-500">
+                      {["0", "15", "30", "40"][match.score_state.currentGame[1]]}
+                      {match.score_state.advantage === "player2" ? "A" : ""}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="text-lg font-semibold w-1/3 text-right">{match.player2}</div>
+            <div className="absolute bottom-2 right-4 text-gray-500 text-xs">{match.match_date}</div>
+          </CardContent>
+        </Card>
           </Link>
           <Button variant="ghost" size="icon" className="ml-2" onClick={(e) => deleteMatch(match.id, e)}>
             <Trash2 className="h-4 w-4" />
