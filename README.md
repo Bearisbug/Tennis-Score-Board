@@ -26,12 +26,15 @@
 ## 环境配置
 
 本示例中 Supabase 的 URL 与 Anon Key 已直接写入代码文件 `lib/supabaseClient.ts` 中（不推荐在生产环境中如此操作）。请根据自己的 Supabase 项目修改以下文件中的配置：
+
 ```ts
 // lib/supabaseClient.ts
 const supabaseUrl = "https://xxxxxxxx.supabase.co"
 const supabaseAnonKey = "eyJhb...xxxxxxxxxx"
 ```
+
 数据表建立
+
 ```SQL
 create table if not exists matches (
   id uuid primary key default gen_random_uuid(),
@@ -48,8 +51,8 @@ create table if not exists matches (
   -- 存储记分状态（JSON 格式）
   score_state jsonb
 );
-
 ```
+
 ## 安装与运行
 
 1. **安装依赖**
@@ -84,5 +87,6 @@ create table if not exists matches (
 ## 注意事项
 
 * 请勿在生产环境中将 Supabase 的 key 直接写入代码，建议使用环境变量保护敏感信息。
-* 如果需要更复杂的比分逻辑（如抢七局等），可根据项目需求进一步完善记分逻辑。
+* ~~如果需要更复杂的比分逻辑（如抢七局等），可根据项目需求进一步完善记分逻辑。~~(已完善)
+
 
