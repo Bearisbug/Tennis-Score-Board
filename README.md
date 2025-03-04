@@ -1,4 +1,4 @@
-# 网球比赛管理系统
+# <img src="https://img.icons8.com/?size=100&id=AF2FJWsPaMoY&format=png&color=000000" width=20> 网球比赛管理系统
 
 ## 简介
 
@@ -10,9 +10,11 @@
 
 ## 技术栈
 
-- **前端**：![Static Badge](https://img.shields.io/badge/NextJS-blue?style=social&logo=nextdotjs&logoColor=%23000000)  ![Static Badge](https://img.shields.io/badge/Framer-blue?style=social&logo=framer&logoColor=%230055FF)  ![Static Badge](https://img.shields.io/badge/TypeScript-blue?style=social&logo=typescript&logoColor=%233178C6)
-- **后端**：![Static Badge](https://img.shields.io/badge/Supabase-blue?style=social&logo=supabase&logoColor=%233FCF8E)
-- **UI 组件**：![Static Badge](https://img.shields.io/badge/shadcn/ui-blue?style=social&logo=shadcnui&logoColor=%23000000)
+- **前端：**[![Static Badge](https://img.shields.io/badge/NextJS-blue?style=social&logo=nextdotjs&logoColor=%23000000)](https://nextjs.org/)  [![Static Badge](https://img.shields.io/badge/Framer-blue?style=social&logo=framer&logoColor=%230055FF)](https://www.framer.com/)  [![Static Badge](https://img.shields.io/badge/TypeScript-blue?style=social&logo=typescript&logoColor=%233178C6)](https://www.typescriptlang.org/)
+
+- **后端：**[![Static Badge](https://img.shields.io/badge/Supabase-blue?style=social&logo=supabase&logoColor=%233FCF8E)](https://supabase.com/)
+
+- **UI 组件：**[![Static Badge](https://img.shields.io/badge/shadcn/ui-blue?style=social&logo=shadcnui&logoColor=%23000000)](https://ui.shadcn.com/)
 
 ## 功能说明
 
